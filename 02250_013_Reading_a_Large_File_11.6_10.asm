@@ -16,7 +16,7 @@ include Macros.inc
 BUFFER_SIZE = 1024
 
 .data
-buffer BYTE BUFFER_SIZE DUP(?)
+buffer BYTE BUFFER_SIZE DUP(0)
 filename byte "output.txt", 0 ; Имя для данного конкретного файла
 ;filename    byte 80 DUP(0) ; Для ввода имя файла от пользователя
 fileHandle  HANDLE ?
@@ -43,17 +43,11 @@ mWrite <"Cannot open file",0dh,0ah>
 jmp	quit						; и выход
 file_ok:
 
-; Читаем из файла в буфер
-mov ecx, 2
+; Читаем в цикле из файла в буфер до тех пор пока не закончатся данные в файле
 L_ReadFile:
-	push ecx
 	 ; Чтениче части файла
-invoke ReadFile,
-    fileHandle,	; file handle
-    addr buffer,	; buffer pointer
-    BUFFER_SIZE,	; max bytes to read
-    addr bytesRead,	; number of bytes read
-    0		; overlapped execution flag
+call ReadFileOrExit
+jc quit ; Данных для чтения в файле больше нет идем к выходу из программы
 
 ; Проверим на ошибки
 call ChekErrorRead
@@ -66,7 +60,6 @@ call ChekErrorRead
 	jnc	buf_size_ok			; Ошибка чтения?
 	mWrite "Error reading file. "		; Да: показать сообщение об ошибке
 	call	WriteWindowsMsg
-	pop ecx ; Вернем наместо стек перед незапланированным выходом
 	jmp	close_file
 	
 ;check_buffer_size:
@@ -79,13 +72,13 @@ buf_size_ok:
 	call OutputPartFile ; Выводим на экран часть содержимого файла 
 	; Move the file pointer to the current space of the file
 	invoke SetFilePointer,fileHandle,0,0,FILE_CURRENT
-	pop ecx
-loop L_ReadFile
+jmp L_ReadFile
 
 close_file:
 invoke CloseHandle, fileHandle ; Закрыть файл
 
 quit:
+call ReadChar
 invoke ExitProcess,0
 main EndP
 
@@ -109,17 +102,40 @@ ChekErrorRead EndP
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 OutputPartFile Proc
 	mov	buffer[eax],0		; Вставим ноль-завершение строки
-	mWrite "File size: "
-	call	WriteDec			; Выводим на экран размер файла
-	call	Crlf
+;	mWrite "File size: "
+;	call	WriteDec			; Выводим на экран размер файла
+;	call	Crlf
 
 ; Выводим на экран содержимое буфера.
-	mWrite <"Buffer:",0dh,0ah,0dh,0ah>
+;	mWrite <"Buffer:",0dh,0ah,0dh,0ah>
 	mov	edx,offset buffer	; вывести на экран буфер
 	call	WriteString
-	call	Crlf
+;	call	Crlf
 	Ret
 OutputPartFile EndP
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Чтение части файла или если файл уже закончился - выход из программы
+ReadFileOrExit Proc
+invoke ReadFile,
+    fileHandle,	; file handle
+    addr buffer,	; buffer pointer
+    BUFFER_SIZE,	; max bytes to read
+    addr bytesRead,	; number of bytes read
+    0		; overlapped execution flag
+; Проверим если данных в файле больше нет - установим CF
+cmp bytesRead, 1
+ja ClearCF ; Данные в файле еще есть, продолжим чтение в буфер
+stc ; set CF Данных в файле больше нет идем к выходу из программы
+jmp Quit
+
+ClearCF: ; Данные в файле еще есть, продолжим чтение в буфер
+clc ; clear CF
+
+Quit:
+	Ret
+ReadFileOrExit EndP
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 END main
